@@ -1,4 +1,4 @@
-# 数据准备
+""" # 数据准备
 import os
 
 os.makedirs(os.path.join('data'), exist_ok=True)
@@ -28,4 +28,40 @@ print(inputs)
 import torch
 X, y = torch.tensor(inputs.values), torch.tensor(outputs.values)
 print(X)
-print(y)
+print(y) """
+
+import torch
+# 1. 证明一个矩阵A的转置的转置是A
+A = torch.arange(20, dtype=torch.float32).reshape(5,4)
+print(A.T.T == A)
+
+# 2. 给两个矩阵，证明它们转置的和等于它们和的转置
+B = A.clone()
+C = A + B
+print(A.T + B.T == C.T)
+
+# 3. 给定任意方阵A，A+A^T总是对称吗
+A = torch.arange(25,dtype=torch.float32).reshape(5,5)
+print(A+A.T == (A+A.T).T)
+
+# 4. 定义形状(2,3,4)的张量X，求len(X)的结果
+X = torch.arange(24).reshape(2,3,4)
+print(len(X)) # 2
+
+# 5. 对于任意形状的张量X，len(X)是否总是对应于X特定轴的长度？这个轴是什么？：是的，总是第一维（最外层的长度)
+
+# 6. A / A.sum(axis=1)的结果
+print(A)
+print(A / A.sum(axis=1)) # A的每一行的第i个数除以第i行求和的结果
+
+# 7. 考虑一个具有形状(2,3,4)的张量X，在轴0，1，2上的求和输出是什么形状
+print(X.sum(axis=0).shape,X.sum(axis=1).shape,X.sum(axis=2).shape)
+
+# 8. 为linalg.norm函数（求范数）提供3个或更多轴的张量，并观察其输出。对于任意形状的张量这个函数计算得到什么？
+A, B = torch.randn(2,3,4), torch.randn(3,4)
+outputs1 = torch.linalg.norm(A)
+outputs2 = torch.linalg.norm(B)
+print(A)
+print(outputs1)
+print(B)
+print(outputs2)
