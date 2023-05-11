@@ -48,3 +48,92 @@ jupyter notebook
 conda deactivate
 ```
 
+# 1 补充预备知识
+## 1.1 线性代数
+### 1.1.1 张量的降维求和
+对一个张量进行元素求和。
+```python
+x = torch.arange(4, dtype=torch.float32)
+print(x,',',x.sum())
+```
+`tensor([0., 1., 2., 3.]) , tensor(6.)`
+
+默认情况下，调用求和函数会沿所有的轴降低张量的维度，使它变成一个标量。我们还可以指定张量沿哪一个轴来通过求和降低维度。以矩阵为例，为了通过求和所有行的元素来降维（轴0），可以在调用函数时指定axis=0。 由于输入矩阵沿0轴降维以生成输出向量，因此输入轴0的维数在输出形状中消失。
+
+假设矩阵A为![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1683774817794-5d4e8cfd-117c-465c-876b-802fc6c0e5b1.png#averageHue=%23262d33&clientId=uc2ec5947-6bd4-4&from=paste&height=84&id=u3176f75b&originHeight=105&originWidth=312&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=7349&status=done&style=none&taskId=ud4605ff6-0cce-4d1a-a5a2-47359470c58&title=&width=250)
+```python
+A_sum_axis0 = A.sum(axis=0)
+A_sum_axis1 = A.sum(axis=1)
+print(A_sum_axis0, A_sum_axis0.shape)
+print(A_sum_axis1, A_sum_axis1.shape)
+```
+`tensor([40., 45., 50., 55.]) torch.Size([4])`<br />`tensor([ 6., 22., 38., 54., 70.]) torch.Size([5])`
+
+同样，计算平均值的函数也可以沿指定轴降低张量的维度。
+```python
+print(A.mean(axis=0))
+print(A.sum(axis=0)/A.shape[0])
+```
+`tensor([ 8.,  9., 10., 11.])`
+
+### 1.1.2 非降维求和
+有时在调用函数来计算总和或均值时保持轴数不变会很有用。
+```python
+# 非降维求和
+sum_A = A.sum(axis=1, keepdim=True)
+print(sum_A)
+print(A / sum_A)
+```
+![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1683775191769-67556568-3d85-498c-ab65-f3ecc5609bae.png#averageHue=%23272e34&clientId=uc2ec5947-6bd4-4&from=paste&height=163&id=u87c897d3&originHeight=204&originWidth=437&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=18259&status=done&style=none&taskId=ud21eebb3-c8f1-4fb9-9036-e8bf28c0216&title=&width=349.6)
+
+如果我们想沿某个轴计算A元素的累积总和， 比如axis=0（按行计算），可以调用cumsum函数。 此函数不会沿任何轴降低输入张量的维度。
+```python
+A.cumsum(axis=0)
+```
+![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1683775230280-3386901f-c932-460d-8390-b8e29fee3103.png#averageHue=%23262d33&clientId=uc2ec5947-6bd4-4&from=paste&height=82&id=uc5c73727&originHeight=103&originWidth=335&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=6609&status=done&style=none&taskId=ub39d8515-38b1-4b03-a315-4c08bd1a5b6&title=&width=268)
+
+### 1.1.3 一些乘法的使用
+```python
+# 点积
+y = torch.ones(4,dtype=torch.float32)
+print(x,y,torch.dot(x,y))
+
+# 向量积
+print(A.shape,x.shape,torch.mv(A,x)) # 使用torch.mv()函数时，A的列维数必须与x的维数相同
+
+# 矩阵乘法
+B = torch.ones(4,3)
+print(A,B)
+print(torch.mm(A,B))
+```
+![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1683775760909-6401e06f-3a98-4aba-9904-3cbabc27e64d.png#averageHue=%2323292f&clientId=uc2ec5947-6bd4-4&from=paste&height=268&id=ue56ff15d&originHeight=335&originWidth=765&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=32152&status=done&style=none&taskId=u55b7c17b-8684-4819-b2df-4a2719c9b4c&title=&width=612)
+
+### 1.1.4 范数
+> 非正式地说，向量的_范数_是表示一个向量有多大。 这里考虑的_大小_（size）概念不涉及维度，而是分量的大小。
+
+在线性代数中，向量范数是将向量映射到标量的函数$f$。给定任意向量$\mathbf{x}$，向量范数要满足一些属性。
+
+1. 如果我们按常数因子$\alpha$缩放向量的所有元素， 其范数也会按相同常数因子的绝对值缩放：$f(\alpha x) = |\alpha|f(x)$
+2. 三角不等式：$f(x+y) \le f(x)+f(y)$
+3. 范数必须是非负的：$f(x)\ge0$
+
+范数听起来很像距离的度量。欧几里得距离和毕达哥拉斯定理中的非负性概念和三角不等式可能会给出一些启发。事实上，欧几里得距离是一个$L_2$范数：假设$n$维向量$\mathbf{x}$中的元素是$x_1,\ldots,x_n$，其$L_2$范数是向量元素平方和的平方根：$\|\mathbf{x}\|_2 = \sqrt{\sum_{i=1}^n x_i^2},$<br />其中，在$L_2$范数中常常省略下标$2$，也就是说$\|\mathbf{x}\|$等同于$\|\mathbf{x}\|_2$。<br />在代码中，我们可以按如下方式计算向量的$L_2$范数。
+```python
+# 范数
+u = torch.tensor([3.0,-4.0])
+print(torch.norm(u)) # 5
+```
+
+深度学习中更经常地使用$L_2$范数的平方，也会经常遇到$L_1$范数，它表示为向量元素的绝对值之和：$\|\mathbf{x}\|_1 = \sum_{i=1}^n \left|x_i \right|$<br />与$L_2$范数相比，$L_1$范数受异常值的影响较小。<br />为了计算$L_1$范数，我们将绝对值函数和按元素求和组合起来。
+```python
+print(torch.abs(u).sum()) # 7
+```
+
+$L_2$范数和$L_1$范数都是更一般的$L_p$范数的特例：$\|\mathbf{x}\|_p = \left(\sum_{i=1}^n \left|x_i \right|^p \right)^{1/p}$
+
+类似于向量的$L_2$范数，矩阵$\mathbf{X} \in \mathbb{R}^{m \times n}$的_Frobenius范数_（Frobenius norm）是矩阵元素平方和的平方根：<br />$\|\mathbf{X}\|_F = \sqrt{\sum_{i=1}^m \sum_{j=1}^n x_{ij}^2}.$
+
+Frobenius范数满足向量范数的所有性质，它就像是矩阵形向量的$L_2$范数。<br />调用以下函数将计算矩阵的Frobenius范数。
+```python
+print(torch.norm(torch.ones((4,9)))) # 6
+```
