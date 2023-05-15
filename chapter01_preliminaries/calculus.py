@@ -67,4 +67,4 @@ def plot(X, Y=None, xlabel=None, ylabel=None, legend=None, xlim=None,ylim=None, 
 # 绘制函数u=f(x)及其在x=1处的切线y=2x-3
 x = np.arange(0,3,0.1)
 plot(x,[f(x),2*x-3],'x','f(x)',legend=['f(x)','Tangent line(x=1)'])
-d2l.plt.show()
+# d2l.plt.show()
