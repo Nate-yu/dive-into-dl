@@ -137,3 +137,10 @@ Frobenius范数满足向量范数的所有性质，它就像是矩阵形向量�
 ```python
 print(torch.norm(torch.ones((4,9)))) # 6
 ```
+
+## 1.2 微积分
+### 1.2.1 梯度
+> 梯度是一个向量，其分量是多变量函数相对于其所有变量的偏导数。
+
+我们可以连结一个多元函数对其所有变量的偏导数，以得到该函数的_梯度_（gradient）向量。<br />具体而言，设函数$f:\mathbb{R}^n\rightarrow\mathbb{R}$的输入是一个$n$维向量$\mathbf{x}=[x_1,x_2,\ldots,x_n]^\top$，并且输出是一个标量。函数$f(\mathbf{x})$相对于$\mathbf{x}$的梯度是一个包含$n$个偏导数的向量：<br />$\nabla_{\mathbf{x}} f(\mathbf{x}) = \bigg[\frac{\partial f(\mathbf{x})}{\partial x_1}, \frac{\partial f(\mathbf{x})}{\partial x_2}, \ldots, \frac{\partial f(\mathbf{x})}{\partial x_n}\bigg]^\top,$<br />其中$\nabla_{\mathbf{x}} f(\mathbf{x})$通常在没有歧义时被$\nabla f(\mathbf{x})$取代。
+

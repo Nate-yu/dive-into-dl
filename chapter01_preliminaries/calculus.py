@@ -8,11 +8,11 @@ def f(x):
 def numerical_lim(f, x, h):
     return (f(x + h) - f(x)) / h
 
-'''h = 0.1
+""" h = 0.1
 for i in range(5):
     print(f'h={h:.5f}, numerical limit={numerical_lim(f, 1, h):.5f}') # 下面是等价语句
     # print('h={:.5f}, numerical limit={:.5f}'.format(h,numerical_lim(f, 1, h)))
-    h *= 0.1 '''
+    h *= 0.1 """
 
 # 使用svg格式显示绘图
 def use_svg_display():
