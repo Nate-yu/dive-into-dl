@@ -17,9 +17,13 @@ def init_params():
     b = torch.zeros(1, requires_grad=True)
     return [w, b]
 
-# 2. 定义L2范数惩罚
+# 2.1 定义L2范数惩罚
 def l2_penalty(w):
     return torch.sum(w.pow(2)) / 2
+
+# 2.2 定义L1范数惩罚
+def l1_penalty(w):
+    return torch.sum(torch.abs(w))
 
 # 3. 定义训练代码实现
 def train(lambd):
@@ -30,7 +34,7 @@ def train(lambd):
 
     for epoch in range(num_epochs):
         for X, y in train_iter:
-            l = loss(net(X), y) + lambd * l2_penalty(w)
+            l = loss(net(X), y) + lambd * l1_penalty(w)
             l.sum().backward()
             d2l.sgd([w, b], lr, batch_size)
         if (epoch+1) % 5 == 0:
@@ -41,7 +45,7 @@ def train(lambd):
 # train(lambd=0)
 
 # 5. 使用权重衰减
-# train(lambd=3)
+train(lambd=3)
 
 # 简洁实现
 def train_concise(wd):
@@ -62,4 +66,4 @@ def train_concise(wd):
             animator.add(epoch+1,(d2l.evaluate_loss(net, train_iter,loss), d2l.evaluate_loss(net, test_iter, loss)))
     print('w的L2范数：', net[0].weight.norm().item())
 
-train_concise(3)
+# train_concise(3)
