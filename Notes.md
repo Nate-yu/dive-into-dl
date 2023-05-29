@@ -160,3 +160,113 @@ print(torch.norm(torch.ones((4,9)))) # 6
 
 1. 一种将块逐个追加到列表中的函数；
 2. 一种前向传播函数，用于将输入按追加块的顺序传递给块组成的“链条”。
+
+## 5.2 参数管理
+### 5.2.2 参数初始化
+> 默认情况下，PyTorch会根据一个范围均匀地初始化权重和偏置矩阵， 这个范围是根据输入和输出维度计算出的。 PyTorch的nn.init模块提供了多种预置初始化方法。
+
+1. 内置初始化
+
+让我们首先调用内置的初始化器。 下面的代码将所有权重参数初始化为标准差为0.01的高斯随机变量， 且将偏置参数设置为0。
+```python
+def init_normal(m):
+    if type(m) == nn.Linear:
+        nn.init.normal_(m.weight, mean=0, std=0.01)
+        nn.init.zeros_(m.bias)
+net.apply(init_normal)
+print(net[0].weight.data[0], net[0].bias.data[0])
+```
+```python
+tensor([-0.0074,  0.0031, -0.0094,  0.0030]) tensor(0.)
+```
+
+我们还可以将所有参数初始化为给定的常数，比如初始化为1。
+```python
+def init_constant(m):
+    if type(m) == nn.Linear:
+        nn.init.constant_(m.weight, 1)
+        nn.init.zeros_(m.bias)
+net.apply(init_constant)
+print(net[0].weight.data[0], net[0].bias.data[0])
+```
+```python
+tensor([1., 1., 1., 1.]) tensor(0.)
+```
+
+我们还可以对某些块应用不同的初始化方法。 例如，下面我们使用Xavier初始化方法初始化第一个神经网络层， 然后将第三个神经网络层初始化为常量值42。
+```python
+def init_xavier(m):
+    if type(m) == nn.Linear:
+        nn.init.xavier_uniform_(m.weight)
+def init_42(m):
+    if type(m) == nn.Linear:
+        nn.init.constant_(m.weight, 42)
+
+net[0].apply(init_xavier)
+net[2].apply(init_42)
+print(net[0].weight.data[0])
+print(net[2].weight.data)
+```
+```python
+tensor([ 0.6557, -0.5915, -0.1561,  0.4981])
+tensor([42., 42., 42., 42., 42., 42., 42., 42.])
+```
+
+2. 自定义初始化
+
+有时，深度学习框架没有提供我们需要的初始化方法。在下面的例子中，我们使用以下的分布为任意权重参数$w$定义初始化方法：<br />$\begin{aligned}
+    w \sim \begin{cases}
+        U(5, 10) & \text{ 可能性 } \frac{1}{4} \\
+            0    & \text{ 可能性 } \frac{1}{2} \\
+        U(-10, -5) & \text{ 可能性 } \frac{1}{4}
+    \end{cases}
+\end{aligned}$<br />同样，我们实现了一个my_init函数来应用到net。
+```python
+def my_init(m):
+    if type(m) == nn.Linear:
+        print("Init", *[(name, param.shape)
+                        for name, param in m.named_parameters()][0])
+        nn.init.uniform_(m.weight, -10, 10)
+        m.weight.data *= m.weight.data.abs() >= 5
+
+net.apply(my_init)
+print(net[0].weight[:2])
+```
+```python
+Init weight torch.Size([8, 4])
+Init weight torch.Size([1, 8])
+tensor([[-0.0000,  8.0061,  0.0000,  6.0829],
+        [ 0.0000, -0.0000,  7.8981, -6.5425]], grad_fn=<SliceBackward0>)
+```
+
+我们始终可以直接设置参数
+```python
+net[0].weight.data[:] += 1
+net[0].weight.data[0, 0] = 42
+print(net[0].weight.data[0])
+```
+```python
+tensor([42.0000, 10.7377,  1.0000, -8.2703])
+```
+
+### 5.2.3 参数绑定
+有时我们希望在多个层间共享参数： 我们可以定义一个稠密层，然后使用它的参数来设置另一个层的参数。
+```python
+# 我们需要给共享层一个名称，以便可以引用它的参数
+shared = nn.Linear(8, 8)
+net = nn.Sequential(nn.Linear(4, 8), nn.ReLU(),
+                    shared, nn.ReLU(),
+                    shared, nn.ReLU(),
+                    nn.Linear(8, 1))
+net(X)
+# 检查参数是否相同
+print(net[2].weight.data[0] == net[4].weight.data[0])
+net[2].weight.data[0, 0] = 100
+# 确保它们实际上是同一个对象，而不只是有相同的值
+print(net[2].weight.data[0] == net[4].weight.data[0])
+```
+```python
+tensor([True, True, True, True, True, True, True, True])
+tensor([True, True, True, True, True, True, True, True])
+```
+这个例子表明第三个和第五个神经网络层的参数是绑定的。 它们不仅值相等，而且由相同的张量表示。 因此，如果我们改变其中一个参数，另一个参数也会改变。<br />这里有一个问题：当参数绑定时，梯度会发生什么情况？ 答案是由于模型参数包含梯度，因此在反向传播期间第二个隐藏层 （即第三个神经网络层）和第三个隐藏层（即第五个神经网络层）的梯度会加在一起。
