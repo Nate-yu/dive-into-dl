@@ -96,7 +96,8 @@ all_features[numeric_features] = all_features[numeric_features].fillna(0)
 all_features = pd.get_dummies(all_features, dummy_na=True)
 """ print(all_features.shape) """
 
-n_train = train_data.shape[0]
+n_train = train_data.shape[0] # 获取训练数据的行数（样本数量）
+# 将预处理后的数据转换为PyTorch张量
 train_features = torch.tensor(all_features[:n_train].values, dtype=torch.float32)
 test_features =  torch.tensor(all_features[n_train:].values, dtype=torch.float32)
 train_labels = torch.tensor(train_data.SalePrice.values.reshape(-1, 1), dtype=torch.float32)
@@ -135,14 +136,14 @@ def train(net, train_features, train_labels, test_features, test_labels, num_epo
 # 5. K折交叉验证
 def get_k_fold_dat(k, i, X, y):
     assert k > 1
-    fold_size = X.shape[0] // k # 计算i从0到k-1的中间folds的大小
+    fold_size = X.shape[0] // k # 计算每个折的大小
     X_train, y_train = None, None
     for j in range(k):
-        idx = slice(j * fold_size, (j + 1) * fold_size) # 取出第j个folds的索引
+        idx = slice(j * fold_size, (j + 1) * fold_size) # 获取第j个折的索引
         X_part, y_part = X[idx,:], y[idx] # 将索引的元素存储到新的列表中，以便后面的x/y_part可以使用它们的末尾元素作为标志
-        if j == i: # 保留第i个folds的标志
+        if j == i: # 如果j == i，则将X_part和y_part作为验证集
             X_valid, y_valid = X_part, y_part
-        elif X_train is None: 
+        elif X_train is None: # 否则，将X_part和y_part添加到训练集
             X_train, y_train = X_part, y_part
         else:
             X_train = torch.cat([X_train, X_part], 0)
@@ -162,3 +163,23 @@ def k_fold(k, X_train, y_train, num_epochs, learning_rate, weight_decay, batch_s
                      xlabel='epoch', ylabel='rmse', xlim=[1, num_epochs], legend=['train', 'valid'], yscale='log')
         print(f'折{i + 1}，训练log rmse{float(train_ls[-1]):f}, ' f'验证log rmse{float(valid_ls[-1]):f}')
     return train_l_sum / k, valid_l_sum / k
+
+# 6. 模型选择
+k, num_epochs, lr, weight_decay, batch_size = 5, 100, 10, 0, 64
+""" train_l, valid_l = k_fold(k, train_features, train_labels, num_epochs, lr, weight_decay, batch_size)
+print(f'{k}-折验证：平均训练log rmse: {float(train_l):f}, 'f'平均验证log rmse: {float(valid_l):f}') """
+
+# 7. 提交Kaggle预测
+def train_and_pred(train_features, test_features, train_labels, test_data, num_epochs, lr, weight_decay, batch_size):
+    net = get_net()
+    train_ls, _ = train(net, train_features, train_labels, None, None, num_epochs, lr, weight_decay, batch_size)
+    d2l.plot(np.arange(1, num_epochs + 1), [train_ls], xlabel='epoch', ylabel='log rmse', xlim=[1, num_epochs], yscale='log')
+    print(f'训练log rmse: {float(train_ls[-1]):f}')
+     # 将网络应用于测试集
+    preds = net(test_features).detach().numpy()
+    # 将其重新格式化以导出到Kaggle
+    test_data['SalePrice'] = pd.Series(preds.reshape(1, -1)[0])
+    submission = pd.concat([test_data['Id'], test_data['SalePrice']], axis=1)
+    submission.to_csv('submission.csv', index=False)
+
+train_and_pred(train_features, test_features, train_labels, test_data,num_epochs, lr, weight_decay, batch_size)
