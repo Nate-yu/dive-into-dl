@@ -270,3 +270,193 @@ tensor([True, True, True, True, True, True, True, True])
 tensor([True, True, True, True, True, True, True, True])
 ```
 这个例子表明第三个和第五个神经网络层的参数是绑定的。 它们不仅值相等，而且由相同的张量表示。 因此，如果我们改变其中一个参数，另一个参数也会改变。<br />这里有一个问题：当参数绑定时，梯度会发生什么情况？ 答案是由于模型参数包含梯度，因此在反向传播期间第二个隐藏层 （即第三个神经网络层）和第三个隐藏层（即第五个神经网络层）的梯度会加在一起。
+
+# 7 现代卷积神经网络
+## 7.1 深度卷积神经网络（AlexNet）
+AlexNet和LeNet的架构非常相似，如下图所示。<br />![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686019079888-9c3944fd-38e2-4238-88b3-bd8bbda9c77d.png#averageHue=%23cddae4&clientId=ud9a33083-126c-4&from=paste&height=747&id=u00fa0c83&originHeight=996&originWidth=644&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=69923&status=done&style=none&taskId=u9b552b1f-0f30-4b9a-bf1c-c2c8c9fe13a&title=&width=483)<br />AlexNet和LeNet的设计理念非常相似，但也存在显著差异。
+
+1. AlexNet比相对较小的LeNet5要深得多。AlexNet由八层组成：五个卷积层、两个全连接隐藏层和一个全连接输出层。
+2. AlexNet使用ReLU而不是sigmoid作为其激活函数。
+
+### 7.1.1 模型设计
+在AlexNet的第一层，卷积窗口的形状是$11\times11$。由于ImageNet中大多数图像的宽和高比MNIST图像的多10倍以上，因此，需要一个更大的卷积窗口来捕获目标。第二层中的卷积窗口形状被缩减为$5\times5$，然后是$3\times3$。此外，在第一层、第二层和第五层卷积层之后，加入窗口形状为$3\times3$、步幅为2的最大汇聚层。而且，AlexNet的卷积通道数目是LeNet的10倍。
+
+在最后一个卷积层后有两个全连接层，分别有4096个输出。这两个巨大的全连接层拥有将近1GB的模型参数。由于早期GPU显存有限，原版的AlexNet采用了双数据流设计，使得每个GPU只负责存储和计算模型的一半参数。幸运的是，现在GPU显存相对充裕，所以现在很少需要跨GPU分解模型。
+
+### 7.1.2 激活函数
+此外，AlexNet将sigmoid激活函数改为更简单的ReLU激活函数。 一方面，ReLU激活函数的计算更简单，它不需要如sigmoid激活函数那般复杂的求幂运算。 另一方面，当使用不同的参数初始化方法时，ReLU激活函数使训练模型更加容易。 当sigmoid激活函数的输出非常接近于0或1时，这些区域的梯度几乎为0，因此反向传播无法继续更新一些模型参数。 相反，ReLU激活函数在正区间的梯度总是1。 因此，如果模型参数没有正确初始化，sigmoid函数可能在正区间内得到几乎为0的梯度，从而使模型无法得到有效的训练。
+
+### 7.1.3 容量控制和预处理
+AlexNet通过暂退法（Dropout）控制全连接层的模型复杂度，而LeNet只使用了权重衰减。 为了进一步扩充数据，AlexNet在训练时增加了大量的图像增强数据，如翻转、裁切和变色。 这使得模型更健壮，更大的样本量有效地减少了过拟合。
+```python
+import torch
+from torch import nn
+from d2l import torch as d2l
+
+net = nn.Sequential(
+    # 这里使用一个11*11的更大窗口来捕捉对象。
+    # 同时，步幅为4，以减少输出的高度和宽度。
+    # 另外，输出通道的数目远大于LeNet
+    nn.Conv2d(1, 96, kernel_size=11, stride=4, padding=1), nn.ReLU(),
+    nn.MaxPool2d(kernel_size=3, stride=2),
+    # 减小卷积窗口，使用填充为2来使得输入与输出的高和宽一致，且增大输出通道数
+    nn.Conv2d(96, 256, kernel_size=5, padding=2), nn.ReLU(),
+    nn.MaxPool2d(kernel_size=3, stride=2),
+    # 使用三个连续的卷积层和较小的卷积窗口。
+    # 除了最后的卷积层，输出通道的数量进一步增加。
+    # 在前两个卷积层之后，汇聚层不用于减少输入的高度和宽度
+    nn.Conv2d(256, 384, kernel_size=3, padding=1), nn.ReLU(),
+    nn.Conv2d(384, 384, kernel_size=3, padding=1), nn.ReLU(),
+    nn.Conv2d(384, 256, kernel_size=3, padding=1), nn.ReLU(),
+    nn.MaxPool2d(kernel_size=3, stride=2),
+    nn.Flatten(),
+    # 这里，全连接层的输出数量是LeNet中的好几倍。使用dropout层来减轻过拟合
+    nn.Linear(6400, 4096), nn.ReLU(),
+    nn.Dropout(p=0.5),
+    nn.Linear(4096, 4096), nn.ReLU(),
+    nn.Dropout(p=0.5),
+    # 最后是输出层。由于这里使用Fashion-MNIST，所以用类别数为10，而非论文中的1000
+    nn.Linear(4096, 10))
+```
+	我们构造一个高度和宽度都为224的单通道数据，来观察每一层输出的形状。
+```python
+X = torch.randn(1, 1, 224, 224)
+for layer in net:
+    X=layer(X)
+    print(layer.__class__.__name__,'output shape:\t',X.shape)
+```
+```python
+Conv2d output shape:         torch.Size([1, 96, 54, 54])
+ReLU output shape:   torch.Size([1, 96, 54, 54])
+MaxPool2d output shape:      torch.Size([1, 96, 26, 26])
+Conv2d output shape:         torch.Size([1, 256, 26, 26])
+ReLU output shape:   torch.Size([1, 256, 26, 26])
+MaxPool2d output shape:      torch.Size([1, 256, 12, 12])
+Conv2d output shape:         torch.Size([1, 384, 12, 12])
+ReLU output shape:   torch.Size([1, 384, 12, 12])
+Conv2d output shape:         torch.Size([1, 384, 12, 12])
+ReLU output shape:   torch.Size([1, 384, 12, 12])
+Conv2d output shape:         torch.Size([1, 256, 12, 12])
+ReLU output shape:   torch.Size([1, 256, 12, 12])
+MaxPool2d output shape:      torch.Size([1, 256, 5, 5])
+Flatten output shape:        torch.Size([1, 6400])
+Linear output shape:         torch.Size([1, 4096])
+ReLU output shape:   torch.Size([1, 4096])
+Dropout output shape:        torch.Size([1, 4096])
+Linear output shape:         torch.Size([1, 4096])
+ReLU output shape:   torch.Size([1, 4096])
+Dropout output shape:        torch.Size([1, 4096])
+Linear output shape:         torch.Size([1, 10])
+```
+
+### 7.1.4 读取数据集
+尽管原文中AlexNet是在ImageNet上进行训练的，但在这里使用的是Fashion-MNIST数据集。因为即使在现代GPU上，训练ImageNet模型，同时使其收敛可能需要数小时或数天的时间。将AlexNet直接应用于Fashion-MNIST的一个问题是，Fashion-MNIST图像的分辨率（$28 \times 28$像素）低于ImageNet图像**。** 为了解决这个问题，我们将它们增加到$224 \times 224$（通常来讲这不是一个明智的做法，但在这里这样做是为了有效使用AlexNet架构）。这里需要使用`d2l.load_data_fashion_mnist`函数中的`resize`参数执行此调整。
+```python
+batch_size = 128
+train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size, resize=224)
+```
+
+### 7.1.5 训练AlexNet
+```python
+lr, num_epochs = 0.01, 10
+d2l.train_ch6(net, train_iter, test_iter, num_epochs, lr, d2l.try_gpu())
+```
+![96e67b9fa02e4d293b154636a765319.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686019694485-f9009911-b6c9-44b0-8011-c925cf6f0d6e.png#averageHue=%23282522&clientId=ud9a33083-126c-4&from=paste&height=36&id=u1c758bcc&originHeight=45&originWidth=418&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=2736&status=done&style=none&taskId=ub04d26be-725b-44a9-89bf-d12f32557cd&title=&width=334.4)<br />![output_alexnet_180871_38_1.svg](https://cdn.nlark.com/yuque/0/2023/svg/25941432/1686019699393-649c1b2f-0fd2-4426-83f8-9f91afa665c1.svg#clientId=ud9a33083-126c-4&from=drop&id=ud089ff66&originHeight=305&originWidth=399&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=61084&status=done&style=none&taskId=uf6202f3d-faff-4ac3-841a-22f10a5d3bb&title=)
+
+## 7.2 使用块的网络（VGG）
+### 7.2.1 VGG块
+经典卷积神经网络的基本组成部分是下面的这个序列：
+
+1. 带填充以保持分辨率的卷积层；
+2. 非线性激活函数，如ReLU；
+3. 汇聚层，如最大汇聚层。
+
+而一个VGG块与之类似，由一系列卷积层组成，后面再加上用于空间下采样的最大池化层。在最初的VGG论文中 `Simonyan.Zisserman.2014`，作者使用了带有$3\times3$卷积核、填充为1（保持高度和宽度）的卷积层，和带有$2 \times 2$汇聚窗口、步幅为2（每个块后的分辨率减半）的最大池化层。在下面的代码中，我们定义了一个名为`vgg_block`的函数来实现一个VGG块。<br />该函数有三个参数，分别对应于卷积层的数量num_convs、输入通道的数量in_channels 和输出通道的数量out_channels.
+```python
+import torch
+from torch import nn
+from d2l import torch as d2l
+
+
+def vgg_block(num_convs, in_channels, out_channels):
+    layers = []
+    for _ in range(num_convs):
+        layers.append(nn.Conv2d(in_channels, out_channels,
+                                kernel_size=3, padding=1))
+        layers.append(nn.ReLU())
+        in_channels = out_channels
+    layers.append(nn.MaxPool2d(kernel_size=2,stride=2))
+    return nn.Sequential(*layers)
+```
+
+### 7.2.2 VGG网络
+与AlexNet、LeNet一样，VGG网络可以分为两部分：第一部分主要由卷积层和汇聚层组成，第二部分由全连接层组成。如下图所示。<br />![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686019909689-cda95139-0b1e-4530-9ec4-726a8b8f0b2e.png#averageHue=%23ebebeb&clientId=ud9a33083-126c-4&from=paste&height=475&id=u596f0c51&originHeight=594&originWidth=643&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=49790&status=done&style=none&taskId=ue122df9a-bd7b-46a8-a367-b2104953793&title=&width=514.4)<br />VGG神经网络连接上图的几个VGG块（在vgg_block函数中定义）。其中有超参数变量conv_arch。该变量指定了每个VGG块里卷积层个数和输出通道数。全连接模块则与AlexNet中的相同。
+
+原始VGG网络有5个卷积块，其中前两个块各有一个卷积层，后三个块各包含两个卷积层。 第一个模块有64个输出通道，每个后续模块将输出通道数量翻倍，直到该数字达到512。由于该网络使用8个卷积层和3个全连接层，因此它通常被称为VGG-11。
+```python
+conv_arch = ((1, 64), (1, 128), (2, 256), (2, 512), (2, 512))
+```
+
+下面的代码实现了VGG-11。可以通过在conv_arch上执行for循环来简单实现。
+```python
+def vgg(conv_arch):
+    conv_blks = []
+    in_channels = 1
+    # 卷积层部分
+    for (num_convs, out_channels) in conv_arch:
+        conv_blks.append(vgg_block(num_convs, in_channels, out_channels))
+        in_channels = out_channels
+
+    return nn.Sequential(
+        *conv_blks, nn.Flatten(),
+        # 全连接层部分
+        nn.Linear(out_channels * 7 * 7, 4096), nn.ReLU(), nn.Dropout(0.5),
+        nn.Linear(4096, 4096), nn.ReLU(), nn.Dropout(0.5),
+        nn.Linear(4096, 10))
+
+net = vgg(conv_arch)
+```
+
+接下来，我们将构建一个高度和宽度为224的单通道数据样本，以观察每个层输出的形状。
+```python
+X = torch.randn(size=(1, 1, 224, 224))
+for blk in net:
+    X = blk(X)
+    print(blk.__class__.__name__,'output shape:\t',X.shape)
+```
+```python
+Sequential output shape:     torch.Size([1, 64, 112, 112])
+Sequential output shape:     torch.Size([1, 128, 56, 56])
+Sequential output shape:     torch.Size([1, 256, 28, 28])
+Sequential output shape:     torch.Size([1, 512, 14, 14])
+Sequential output shape:     torch.Size([1, 512, 7, 7])
+Flatten output shape:        torch.Size([1, 25088])
+Linear output shape:         torch.Size([1, 4096])
+ReLU output shape:   torch.Size([1, 4096])
+Dropout output shape:        torch.Size([1, 4096])
+Linear output shape:         torch.Size([1, 4096])
+ReLU output shape:   torch.Size([1, 4096])
+Dropout output shape:        torch.Size([1, 4096])
+Linear output shape:         torch.Size([1, 10])
+```
+正如从代码中所看到的，我们在每个块的高度和宽度减半，最终高度和宽度都为7。最后再展平表示，送入全连接层处理。
+
+### 7.2.3 训练模型
+由于VGG-11比AlexNet计算量更大，因此我们构建了一个通道数较少的网络，足够用于训练Fashion-MNIST数据集。
+```python
+ratio = 4
+small_conv_arch = [(pair[0], pair[1] // ratio) for pair in conv_arch]
+net = vgg(small_conv_arch)
+```
+
+除了使用略高的学习率外，模型训练过程与AlexNet类似。
+```python
+lr, num_epochs, batch_size = 0.05, 10, 128
+train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size, resize=224)
+d2l.train_ch6(net, train_iter, test_iter, num_epochs, lr, d2l.try_gpu())
+```
+```python
+loss 0.220, train acc 0.918, test acc 0.900
+2578.4 examples/sec on cuda:0
+```
+![output_vgg_4a7574_71_1.svg](https://cdn.nlark.com/yuque/0/2023/svg/25941432/1686020088419-631f6558-0e76-4c39-9740-e34e465c74f7.svg#clientId=ud9a33083-126c-4&from=drop&id=ub40e763b&originHeight=305&originWidth=399&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=61066&status=done&style=none&taskId=ufe35186e-b262-44e7-ada6-4aef55d93eb&title=)
