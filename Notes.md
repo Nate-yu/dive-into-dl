@@ -460,3 +460,62 @@ loss 0.220, train acc 0.918, test acc 0.900
 2578.4 examples/sec on cuda:0
 ```
 ![output_vgg_4a7574_71_1.svg](https://cdn.nlark.com/yuque/0/2023/svg/25941432/1686020088419-631f6558-0e76-4c39-9740-e34e465c74f7.svg#clientId=ud9a33083-126c-4&from=drop&id=ub40e763b&originHeight=305&originWidth=399&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=61066&status=done&style=none&taskId=ufe35186e-b262-44e7-ada6-4aef55d93eb&title=)
+
+## 7.3 网络中的网络（NiN）
+>  网络中的网络（NiN）提供了一个非常简单的解决方案：在每个像素的通道上分别使用多层感知机
+
+### 7.3.1 NiN块
+回想一下，卷积层的输入和输出由四维张量组成，张量的每个轴分别对应样本、通道、高度和宽度。另外，全连接层的输入和输出通常是分别对应于样本和特征的二维张量。NiN的想法是在每个像素位置（针对每个高度和宽度）应用一个全连接层。如果我们将权重连接到每个空间位置，我们可以将其视为$1\times 1$卷积层，或作为在每个像素位置上独立作用的全连接层。从另一个角度看，即将空间维度中的每个像素视为单个样本，将通道维度视为不同特征（feature）。
+
+下图说明了VGG和NiN及它们的块之间主要架构差异。NiN块以一个普通卷积层开始，后面是两个$1 \times 1$的卷积层。这两个$1 \times 1$卷积层充当带有ReLU激活函数的逐像素全连接层。第一层的卷积窗口形状通常由用户设置。随后的卷积窗口形状固定为$1 \times 1$。<br />![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686105807334-fac6378b-7e11-4079-b1bd-de1c51093396.png#averageHue=%23ededed&clientId=udeb62791-e658-4&from=paste&height=698&id=bzEIu&originHeight=873&originWidth=944&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=64351&status=done&style=none&taskId=u1724977a-6d26-4ff1-902c-5ff8b139c21&title=&width=755.2)
+```python
+import torch
+from torch import nn
+from d2l import torch as d2l
+
+
+def nin_block(in_channels, out_channels, kernel_size, strides, padding):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, kernel_size, strides, padding),
+        nn.ReLU(),
+        nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU(),
+        nn.Conv2d(out_channels, out_channels, kernel_size=1), nn.ReLU())
+```
+
+### 7.3.2 NiN模型
+最初的NiN网络是在AlexNet后不久提出的，显然从中得到了一些启示。NiN使用窗口形状为$11\times 11$、$5\times 5$和$3\times 3$的卷积层，输出通道数量与AlexNet中的相同。<br />每个NiN块后有一个最大池化层，汇聚窗口形状为$3\times 3$，步幅为2。
+
+NiN和AlexNet之间的一个显著区别是NiN完全取消了全连接层。相反，NiN使用一个NiN块，其输出通道数等于标签类别的数量。最后放一个*全局平均汇聚层*（global average pooling layer），生成一个对数几率（logits）。NiN设计的一个优点是，它显著减少了模型所需参数的数量。然而，在实践中，这种设计有时会增加训练模型的时间。
+```python
+net = nn.Sequential(
+    nin_block(1, 96, kernel_size=11, strides=4, padding=0),
+    nn.MaxPool2d(3, stride=2),
+    nin_block(96, 256, kernel_size=5, strides=1, padding=2),
+    nn.MaxPool2d(3, stride=2),
+    nin_block(256, 384, kernel_size=3, strides=1, padding=1),
+    nn.MaxPool2d(3, stride=2),
+    nn.Dropout(0.5),
+    # 标签类别数是10
+    nin_block(384, 10, kernel_size=3, strides=1, padding=1),
+    nn.AdaptiveAvgPool2d((1, 1)),
+    # 将四维的输出转成二维的输出，其形状为(批量大小,10)
+    nn.Flatten())
+```
+
+我们创建一个数据样本来查看每个块的输出形状。
+```python
+X = torch.rand(size=(1, 1, 224, 224))
+for layer in net:
+    X = layer(X)
+    print(layer.__class__.__name__,'output shape:\t', X.shape)
+```
+![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686105983512-8645fde4-349f-4375-9b04-8eed129b74b7.png#averageHue=%232a2723&clientId=udeb62791-e658-4&from=paste&height=162&id=ub3ab911e&originHeight=203&originWidth=575&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=23219&status=done&style=none&taskId=ud3e8b7c6-b2c5-4284-8b60-801e9e74a8d&title=&width=460)
+
+### 7.3.3 训练模型
+和以前一样，我们使用Fashion-MNIST来训练模型。训练NiN与训练AlexNet、VGG时相似。
+```python
+lr, num_epochs, batch_size = 0.1, 10, 128
+train_iter, test_iter = d2l.load_data_fashion_mnist(batch_size, resize=224)
+d2l.train_ch6(net, train_iter, test_iter, num_epochs, lr, d2l.try_gpu())
+```
+![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686106036597-fbd935a4-4430-421f-a60f-85e487960792.png#averageHue=%23292623&clientId=udeb62791-e658-4&from=paste&height=33&id=u99950207&originHeight=41&originWidth=411&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=3250&status=done&style=none&taskId=u6c93a0b6-1127-4cc1-9808-7b34a5ab592&title=&width=328.8)<br />![image.png](https://cdn.nlark.com/yuque/0/2023/png/25941432/1686105925286-aff49df3-bbe3-4201-ae9d-9fd3f95d6381.png#averageHue=%23f6f6f6&clientId=udeb62791-e658-4&from=paste&height=250&id=uc6ca2886&originHeight=312&originWidth=437&originalType=binary&ratio=1.25&rotation=0&showTitle=false&size=24052&status=done&style=none&taskId=ud9c2e6a9-0899-4cc1-a0e2-b09d94a7d20&title=&width=349.6)
